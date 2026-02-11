@@ -3,6 +3,7 @@ import time
 import requests
 import os
 import threading
+import random
 
 app = Flask(__name__)
 
@@ -10,12 +11,14 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 # --- Device tracking ---
-last_seen = {}       # last ping time
 status = {}          # "ON" or "OFF"
 last_on_time = {}    # last time device turned ON
 last_off_time = {}   # last time device turned OFF
 uptimes = {}         # list of ON durations
 downtimes = {}       # list of OFF durations
+
+on_emojis = ["🌞","☀️","💡","✨","🔆","🌈","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀","🥰","😍","💖"]
+off_emojis = ["🌑","🌧️","💤","😔","😢","😭","😡","😠","🖤","😱","😤","🤬","🥶"]
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -42,46 +45,37 @@ def format_duration(seconds):
 @app.route("/ping")
 def ping():
     device_id = request.args.get("id", "unknown")
+    new_status = request.args.get("status", "OFF").upper()  # ON / OFF
     now = time.time()
 
     # Light turned ON
-    if device_id not in status or status[device_id] == "OFF":
-        # Calculate downtime if available
+    if new_status == "ON" and status.get(device_id) != "ON":
+        # Calculate downtime
         downtime = 0
         if device_id in last_off_time:
             downtime = now - last_off_time[device_id]
             downtimes.setdefault(device_id, []).append(downtime)
 
         downtime_str = format_duration(downtime)
-        send_message(f"💡 Light turned ON\nDevice: {device_id}\nIt was OFF for: {downtime_str}")
+        emoji = random.choice(on_emojis)
+        send_message(f"{emoji} Свет включился!\nЕго не было: {downtime_str}")
 
         status[device_id] = "ON"
         last_on_time[device_id] = now
 
-    last_seen[device_id] = now
+    # Light turned OFF
+    elif new_status == "OFF" and status.get(device_id) == "ON":
+        status[device_id] = "OFF"
+        on_time = last_on_time.get(device_id, now)
+        duration = now - on_time
+        uptimes.setdefault(device_id, []).append(duration)
+        last_off_time[device_id] = now
+
+        duration_str = format_duration(duration)
+        emoji = random.choice(off_emojis)
+        send_message(f"{emoji} Свет погас!\nОн горел: {duration_str}")
+
     return "OK"
-
-def monitor():
-    while True:
-        now = time.time()
-        for device_id in list(last_seen.keys()):
-            # Light turned OFF (no ping for >60 sec)
-            if now - last_seen[device_id] > 60 and status.get(device_id) == "ON":
-                status[device_id] = "OFF"
-                on_time = last_on_time.get(device_id, now)
-                duration = now - on_time
-                uptimes.setdefault(device_id, []).append(duration)
-                last_off_time[device_id] = now
-
-                duration_str = format_duration(duration)
-                send_message(f"⚡ Light turned OFF\nDevice: {device_id}\nIt was ON for: {duration_str}")
-
-                print(f"Device {device_id} was ON for {duration_str}")
-
-        time.sleep(10)
-
-# Start monitoring in background
-threading.Thread(target=monitor, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
