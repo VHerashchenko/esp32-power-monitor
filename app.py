@@ -86,7 +86,7 @@ def monitor():
 
                 downtime_str = format_duration(downtime)
                 emoji = random.choice(on_emojis)
-                send_message(f"🔵🔵{emoji} Power Restored\nOffline duration: {duration_str}")
+                send_message(f"🔵🔵{emoji} Power Restored\nOffline duration: {downtime_str}")
                 print(f"Device {device_id} turned ON, was OFF for {downtime_str}")
 
         time.sleep(10)
@@ -97,4 +97,5 @@ threading.Thread(target=monitor, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
