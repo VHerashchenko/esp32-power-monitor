@@ -18,8 +18,8 @@ last_off_time = {}   # last time device turned OFF
 intervals = {}       # list of ON durations
 downtimes = {}       # list of OFF durations
 
-on_emojis = ["🌞","☀️","💡","✨","🔆","🌈","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀","🥰","😍","💖"]
-off_emojis = ["🌑","🌧️","💤","😔","😢","😭","😡","😠","🖤","😱","😤","🤬","🥶"]
+on_emojis = ["🌞","☀️","💡","✨","🔆","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀"]
+off_emojis = ["🌧️","💤","😔","😢","😭","😡","😠","🖤","😱","😤","🤬","🥶"]
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -74,7 +74,7 @@ def monitor():
 
                 duration_str = format_duration(duration)
                 emoji = random.choice(off_emojis)
-                send_message(f"{emoji} Свет погас!\nОн горел: {duration_str}")
+                send_message(f"🌑🌑{emoji} Power Lost\nOnline duration: {duration_str}")
                 print(f"Device {device_id} was ON for {duration_str}")
 
             # Device should be ON if it just pinged and was OFF
@@ -86,7 +86,7 @@ def monitor():
 
                 downtime_str = format_duration(downtime)
                 emoji = random.choice(on_emojis)
-                send_message(f"{emoji} Свет включился!\nЕго не было: {downtime_str}")
+                send_message(f"🔵🔵{emoji} Power Restored\nOffline duration: {duration_str}")
                 print(f"Device {device_id} turned ON, was OFF for {downtime_str}")
 
         time.sleep(10)
@@ -97,3 +97,4 @@ threading.Thread(target=monitor, daemon=True).start()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
