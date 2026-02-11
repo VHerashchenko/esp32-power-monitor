@@ -12,9 +12,10 @@ CHAT_ID = os.environ["CHAT_ID"]
 
 # --- Device tracking ---
 status = {}          # "ON" or "OFF"
+last_seen = {}       # last ping time
 last_on_time = {}    # last time device turned ON
 last_off_time = {}   # last time device turned OFF
-uptimes = {}         # list of ON durations
+intervals = {}       # list of ON durations
 downtimes = {}       # list of OFF durations
 
 on_emojis = ["🌞","☀️","💡","✨","🔆","🌈","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀","🥰","😍","💖"]
@@ -47,54 +48,52 @@ def ping():
     device_id = request.args.get("id", "unknown")
     now = time.time()
 
-    # Device was OFF or first ping
-    if device_id not in status or status[device_id] == "OFF":
-        send_message(f"💡 Light turned ON\nDevice: {device_id}")
-        # Calculate downtime if we have a previous OFF time
-        downtime = 0
-        if device_id in last_off_time:
-            downtime = now - last_off_time[device_id]
-            if device_id not in downtimes:
-                downtimes[device_id] = []
-            downtimes[device_id].append(downtime)
-
-        downtime_str = format_duration(downtime)
-        emoji = random.choice(on_emojis)
-        send_message(f"{emoji} Свет включился!\nЕго не было: {downtime_str}")
-
-        status[device_id] = "ON"
-        last_on_time[device_id] = now
-
     last_seen[device_id] = now
+
+    # Initialize device if first time
+    if device_id not in status:
+        status[device_id] = "OFF"
+        last_on_time[device_id] = 0
+        last_off_time[device_id] = now
+        intervals[device_id] = []
+        downtimes[device_id] = []
+
     return "OK"
 
 def monitor():
     while True:
         now = time.time()
         for device_id in list(last_seen.keys()):
-            # If no ping for >60 seconds and device was ON
-            if now - last_seen[device_id] > 60 and status.get(device_id) == "ON":
+            # Device should be OFF if no ping for > 60 sec
+            if status.get(device_id, "OFF") == "ON" and now - last_seen[device_id] > 60:
                 status[device_id] = "OFF"
                 on_time = last_on_time.get(device_id, now)
                 duration = now - on_time
-                if device_id not in intervals:
-                    intervals[device_id] = []
-                intervals[device_id].append(duration)
-
+                intervals.setdefault(device_id, []).append(duration)
                 last_off_time[device_id] = now
 
                 duration_str = format_duration(duration)
                 emoji = random.choice(off_emojis)
                 send_message(f"{emoji} Свет погас!\nОн горел: {duration_str}")
-
                 print(f"Device {device_id} was ON for {duration_str}")
+
+            # Device should be ON if it just pinged and was OFF
+            elif status.get(device_id, "OFF") == "OFF" and now - last_seen[device_id] <= 60:
+                status[device_id] = "ON"
+                downtime = now - last_off_time.get(device_id, now)
+                downtimes.setdefault(device_id, []).append(downtime)
+                last_on_time[device_id] = now
+
+                downtime_str = format_duration(downtime)
+                emoji = random.choice(on_emojis)
+                send_message(f"{emoji} Свет включился!\nЕго не было: {downtime_str}")
+                print(f"Device {device_id} turned ON, was OFF for {downtime_str}")
 
         time.sleep(10)
 
-# Start monitoring thread
+# Start monitor thread
 threading.Thread(target=monitor, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
