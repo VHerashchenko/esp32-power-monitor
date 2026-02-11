@@ -113,7 +113,7 @@ def monitor():
         for device_id in list(last_seen.keys()):
 
             # -------- TURN OFF --------
-            if status.get(device_id) == "ON" and now - last_seen[device_id] > 60:
+            if status.get(device_id) == "ON" and now - last_seen[device_id] > 90:
                 status[device_id] = "OFF"
 
                 on_time = last_on_time.get(device_id)
@@ -133,7 +133,7 @@ def monitor():
                 print(f"{device_id} OFF, was ON for {duration_str}")
 
             # -------- TURN ON --------
-            elif status.get(device_id) == "OFF" and now - last_seen[device_id] <= 60:
+            elif status.get(device_id) == "OFF" and now - last_seen[device_id] <= 90:
                 status[device_id] = "ON"
 
                 off_time = last_off_time.get(device_id)
@@ -161,3 +161,4 @@ if __name__ == "__main__":
     threading.Thread(target=monitor, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
