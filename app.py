@@ -2,7 +2,6 @@ from flask import Flask, request
 import time
 import requests
 import os
-import threading
 import random
 
 app = Flask(__name__)
@@ -11,14 +10,10 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 # --- Device tracking ---
-status = {}          # "ON" or "OFF"
-last_on_time = {}    # last time device turned ON
-last_off_time = {}   # last time device turned OFF
-uptimes = {}         # list of ON durations
-downtimes = {}       # list of OFF durations
+status = {}  # "ON" or "OFF"
 
-on_emojis = ["🌞","☀️","💡","✨","🔆","🌈","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀","🥰","😍","💖"]
-off_emojis = ["🌑","🌧️","💤","😔","😢","😭","😡","😠","🖤","😱","😤","🤬","🥶"]
+on_emojis = ["🌞","☀️","💡","✨","🔆","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀"]
+off_emojis = ["🌧️","💤","😔","😢","😭","😡","😠","🖤","😱","😤","🤬","🥶"]
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -31,6 +26,8 @@ def send_message(text):
         print("Failed to send Telegram message:", e)
 
 def format_duration(seconds):
+    if seconds is None or seconds < 0:
+        return "unknown"
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -46,34 +43,28 @@ def format_duration(seconds):
 def ping():
     device_id = request.args.get("id", "unknown")
     new_status = request.args.get("status", "OFF").upper()  # ON / OFF
-    now = time.time()
+    event_time = request.args.get("time")  # timestamp from ESP32
 
-    # Light turned ON
+    try:
+        event_time = float(event_time)
+    except (TypeError, ValueError):
+        event_time = time.time()  # fallback if not provided
+
+    now = time.time()  # current server time
+    # time difference between now and last event reported by ESP32
+    duration = now - event_time
+
+    # --- Light turned ON ---
     if new_status == "ON" and status.get(device_id) != "ON":
-        # Calculate downtime
-        downtime = 0
-        if device_id in last_off_time:
-            downtime = now - last_off_time[device_id]
-            downtimes.setdefault(device_id, []).append(downtime)
-
-        downtime_str = format_duration(downtime)
         emoji = random.choice(on_emojis)
-        send_message(f"{emoji} Свет включился!\nЕго не было: {downtime_str}")
-
+        send_message(f"🔵🔵{emoji} Power Restored\nOffline duration: {format_duration(duration)}")
         status[device_id] = "ON"
-        last_on_time[device_id] = now
 
-    # Light turned OFF
+    # --- Light turned OFF ---
     elif new_status == "OFF" and status.get(device_id) == "ON":
-        status[device_id] = "OFF"
-        on_time = last_on_time.get(device_id, now)
-        duration = now - on_time
-        uptimes.setdefault(device_id, []).append(duration)
-        last_off_time[device_id] = now
-
-        duration_str = format_duration(duration)
         emoji = random.choice(off_emojis)
-        send_message(f"{emoji} Свет погас!\nОн горел: {duration_str}")
+        send_message(f"🌑🌑{emoji} Power Lost\nOnline duration: {format_duration(duration)}")
+        status[device_id] = "OFF"
 
     return "OK"
 
