@@ -2,6 +2,7 @@ from flask import Flask, request
 import time
 import requests
 import os
+import threading
 import random
 
 app = Flask(__name__)
@@ -10,7 +11,12 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 # --- Device tracking ---
-status = {}  # "ON" or "OFF"
+status = {}          # "ON" or "OFF"
+last_seen = {}       # last ping time
+last_on_time = {}    # last time device turned ON
+last_off_time = {}   # last time device turned OFF
+intervals = {}       # list of ON durations
+downtimes = {}       # list of OFF durations
 
 on_emojis = ["🌞","☀️","💡","✨","🔆","🌻","💛","😄","😃","😁","😎","🤩","🥳","🌸","🌼","🌷","🍀"]
 off_emojis = ["🌧️","💤","😔","😢","😭","😡","😠","🖤","😱","😤","🤬","🥶"]
@@ -26,8 +32,6 @@ def send_message(text):
         print("Failed to send Telegram message:", e)
 
 def format_duration(seconds):
-    if seconds is None or seconds < 0:
-        return "unknown"
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -42,31 +46,53 @@ def format_duration(seconds):
 @app.route("/ping")
 def ping():
     device_id = request.args.get("id", "unknown")
-    new_status = request.args.get("status", "OFF").upper()  # ON / OFF
-    event_time = request.args.get("time")  # timestamp from ESP32
+    now = time.time()
 
-    try:
-        event_time = float(event_time)
-    except (TypeError, ValueError):
-        event_time = time.time()  # fallback if not provided
+    last_seen[device_id] = now
 
-    now = time.time()  # current server time
-    # time difference between now and last event reported by ESP32
-    duration = now - event_time
-
-    # --- Light turned ON ---
-    if new_status == "ON" and status.get(device_id) != "ON":
-        emoji = random.choice(on_emojis)
-        send_message(f"🔵🔵{emoji} Power Restored\nOffline duration: {format_duration(duration)}")
-        status[device_id] = "ON"
-
-    # --- Light turned OFF ---
-    elif new_status == "OFF" and status.get(device_id) == "ON":
-        emoji = random.choice(off_emojis)
-        send_message(f"🌑🌑{emoji} Power Lost\nOnline duration: {format_duration(duration)}")
+    # Initialize device if first time
+    if device_id not in status:
         status[device_id] = "OFF"
+        last_on_time[device_id] = 0
+        last_off_time[device_id] = now
+        intervals[device_id] = []
+        downtimes[device_id] = []
 
     return "OK"
+
+def monitor():
+    while True:
+        now = time.time()
+        for device_id in list(last_seen.keys()):
+            # Device should be OFF if no ping for > 60 sec
+            if status.get(device_id, "OFF") == "ON" and now - last_seen[device_id] > 60:
+                status[device_id] = "OFF"
+                on_time = last_on_time.get(device_id, now)
+                duration = now - on_time
+                intervals.setdefault(device_id, []).append(duration)
+                last_off_time[device_id] = now
+
+                duration_str = format_duration(duration)
+                emoji = random.choice(off_emojis)
+                send_message(f"🌑🌑{emoji} Power Lost\nOnline duration: {duration_str}")
+                print(f"Device {device_id} was ON for {duration_str}")
+
+            # Device should be ON if it just pinged and was OFF
+            elif status.get(device_id, "OFF") == "OFF" and now - last_seen[device_id] <= 60:
+                status[device_id] = "ON"
+                downtime = now - last_off_time.get(device_id, now)
+                downtimes.setdefault(device_id, []).append(downtime)
+                last_on_time[device_id] = now
+
+                downtime_str = format_duration(downtime)
+                emoji = random.choice(on_emojis)
+                send_message(f"🔵🔵{emoji} Power Restored")
+                print(f"Device {device_id} turned ON, was OFF for {downtime_str}")
+
+        time.sleep(10)
+
+# Start monitor thread
+threading.Thread(target=monitor, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
